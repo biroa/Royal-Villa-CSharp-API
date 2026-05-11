@@ -1,0 +1,38 @@
+# Build outputs
+bin/
+obj/
+TestResults/
+coverage/
+artifacts/
+publish/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.csproj.user
+*.sln.docstates
+
+# Rider / JetBrains
+.idea/
+
+# VS Code
+.vscode/
+
+# Local tooling / logs
+*.log
+*.pid
+*.tmp
+*.cache
+
+# NuGet packages folder (optional; depends on your workflow)
+packages/
+
+# Local database files (only if you use them)
+*.mdf
+*.ldf
+
+# Docker / compose (if you generate local files)
+*.localwq
+
+
