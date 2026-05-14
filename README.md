@@ -186,3 +186,13 @@ You do not need to repeat these steps unless you are recreating the setup from s
 | **`Data/AppDbContext.cs`** | `AppDbContext` deriving from `DbContext` with constructor injection of `DbContextOptions<AppDbContext>`. |
 
 Until you add models and query the context at runtime, the API will build without contacting PostgreSQL; any endpoint that uses `AppDbContext` will require PostgreSQL to be running and the connection string to be valid.
+
+### Useful Commands
+
+- Creara C# migration files from models
+   - ```dotnet ef migrations add [InitialCreate aka migration name]```
+- Run migrations against the database
+   - ```dotnet ef database update [InitialCreate aka migration name]```
+   - ```dotnet ef database update```
+- Migration list
+   - ```dotnet ef migrations list```
