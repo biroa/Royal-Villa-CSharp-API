@@ -196,3 +196,8 @@ Until you add models and query the context at runtime, the API will build withou
    - ```dotnet ef database update```
 - Migration list
    - ```dotnet ef migrations list```
+
+
+### Migration related information in C#
+
+![Migration level settings in Visual Studio / VS Code](.vscode/README/Migration-Level-Settings.webp)
