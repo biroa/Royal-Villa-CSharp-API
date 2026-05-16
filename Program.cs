@@ -56,3 +56,11 @@ app.UseHttpsRedirection();
 app.MapControllers();
 
 app.Run();
+
+static async Task SeedDataAsync(WebApplication app)
+{
+    using var scope = app.Services.CreateScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await dbContext.Database.MigrateAsync();
+
+}
