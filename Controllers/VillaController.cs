@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using RoyalVillaApi.Data;
 using RoyalVillaApi.Models;
+using RoyalVillaApi.Models.DTO;
 
 namespace RoyalVillaApi.Controllers;
 
@@ -167,6 +168,42 @@ public class VillaController : ControllerBase
         {
             return StatusCode(StatusCodes.Status500InternalServerError, 
             $"An error occurred while fetching villa with id {id}: {ex.Message}"
+            );
+        }
+    }
+
+    [HttpPost]
+    [ProducesResponseType(StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<Villa>> CreateVilla(VillaCreateDTO villaCreateDTO)
+    {
+        try
+        {
+            if (villaCreateDTO == null)
+            {
+                return BadRequest("Villa is required");
+            }
+
+            var villa = new Villa
+            {
+                Name = villaCreateDTO.Name,
+                Details = villaCreateDTO.Details,
+                Rate = villaCreateDTO.Rate,
+                Sqft = villaCreateDTO.Sqft,
+                Occupancy = villaCreateDTO.Occupancy,
+                ImageUrl = villaCreateDTO.ImageUrl,
+                CreatedDate = DateTime.Now.ToUniversalTime()
+            };
+            
+            await _dbContext.Villas.AddAsync(villa);
+            await _dbContext.SaveChangesAsync();
+            return Ok(villa);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, 
+            $"An error occurred while creating the villa: {ex.Message}"
             );
         }
     }

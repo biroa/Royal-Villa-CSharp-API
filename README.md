@@ -88,7 +88,7 @@ Start debugging from the Run and Debug view or press **F5** after selecting a co
 | `Program.cs` | Minimal hosting pipeline: OpenAPI, EF Core (`AddDbContext<AppDbContext>` + PostgreSQL), HTTPS, development docs. |
 | `Properties/launchSettings.json` | Local Kestrel URLs and environment variables per profile. |
 | `Data/AppDbContext.cs` | EF Core `DbContext`; register entities with `DbSet<>` when you add models. |
-| `RoyalVillaApi.csproj` | SDK, TFMs, packages (OpenAPI, Scalar, EF Core, Npgsql provider). |
+| `RoyalVillaApi.csproj` | SDK, TFMs, packages (OpenAPI, Scalar, EF Core, Npgsql provider, AutoMapper). |
 | `RoyalVillaApi.http` | Sample REST client snippets (optional IDE support). |
 
 ---
@@ -100,6 +100,13 @@ Start debugging from the Run and Debug view or press **F5** after selecting a co
 - **Microsoft.EntityFrameworkCore** — ORM and change tracking for database access.
 - **Microsoft.EntityFrameworkCore.Design** — Design-time support for EF Core (for example `dotnet ef` migrations); referenced with private assets so it is not published with the app.
 - **Npgsql.EntityFrameworkCore.PostgreSQL** — EF Core database provider for PostgreSQL.
+- **AutoMapper** — Maps between domain models (for example `Villa`) and DTOs (for example `VillaCreateDTO`) so controllers stay thin. Dependency injection is built into the main package (`services.AddAutoMapper(...)` in `Program.cs`).
+
+Install or update AutoMapper from the project directory:
+
+```bash
+dotnet add package AutoMapper
+```
 
 ---
 
@@ -168,12 +175,14 @@ If you plan to manage the schema with migrations, install the global EF tool onc
 dotnet tool install --global dotnet-ef
 ```
 
-After you add entity types and `DbSet<>` mappings to `Data/AppDbContext.cs`, you can create and apply migrations, for example:
+After you add entity types and `DbSet<>` mappings to `Data/AppDbContext.cs`, you can create and apply migrations. Seed data for villas is configured in that file (`OnModelCreating` / `HasData`); see [Migrations and seed data](#migrations-and-seed-data) below. Example:
 
 ```bash
 dotnet ef migrations add InitialCreate
 dotnet ef database update
 ```
+
+`dotnet ef database update` applies pending migrations to PostgreSQL and records them in `__EFMigrationsHistory`.
 
 ### What this repository already wires up
 
@@ -181,23 +190,36 @@ You do not need to repeat these steps unless you are recreating the setup from s
 
 | Area | What is configured |
 |------|--------------------|
-| **Packages** (`RoyalVillaApi.csproj`) | `Microsoft.EntityFrameworkCore` (10.0.7), `Microsoft.EntityFrameworkCore.Design` (10.0.7, private assets), `Npgsql.EntityFrameworkCore.PostgreSQL` (10.0.0), plus OpenAPI and Scalar packages. |
-| **`Program.cs`** | `builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));` |
-| **`Data/AppDbContext.cs`** | `AppDbContext` deriving from `DbContext` with constructor injection of `DbContextOptions<AppDbContext>`. |
+| **Packages** (`RoyalVillaApi.csproj`) | `Microsoft.EntityFrameworkCore` (10.0.7), `Microsoft.EntityFrameworkCore.Design` (10.0.7, private assets), `Npgsql.EntityFrameworkCore.PostgreSQL` (10.0.0), `AutoMapper`, plus OpenAPI and Scalar packages. |
+| **`Program.cs`** | `AddDbContext<AppDbContext>` with Npgsql; controllers and OpenAPI registration. |
+| **Object mapping** | **AutoMapper** — `dotnet add package AutoMapper`, then `services.AddAutoMapper(...)` in `Program.cs` and `IMapper` in controllers to map entities and DTOs. |
+| **`Data/AppDbContext.cs`** | `AppDbContext`, `DbSet<Villa>`, and **seed data** via `OnModelCreating` → `HasData(...)` (five default villas). |
 
 Until you add models and query the context at runtime, the API will build without contacting PostgreSQL; any endpoint that uses `AppDbContext` will require PostgreSQL to be running and the connection string to be valid.
 
-### Useful Commands
+### Migrations and seed data
 
-- Creara C# migration files from models
-   - ```dotnet ef migrations add [InitialCreate aka migration name]```
-- Run migrations against the database
-   - ```dotnet ef database update [InitialCreate aka migration name]```
-   - ```dotnet ef database update```
-- Migration list
-   - ```dotnet ef migrations list```
+Initial villa rows are defined in **`Data/AppDbContext.cs`**, inside `OnModelCreating`, using EF Core’s `HasData` API. That configuration is compiled into migration files under `Migrations/` (for example `SeedVillas`). After you change seed data in `AppDbContext`, create a new migration and apply it so the database and history table stay in sync.
 
+| Step | Command | What it does |
+|------|---------|----------------|
+| Add a migration | `dotnet ef migrations add <MigrationName>` | Generates C# migration classes from the current model (including `HasData` changes). |
+| Apply to the database | `dotnet ef database update` | Runs pending migrations: creates or alters tables, inserts seed rows, and **adds one row per applied migration to `__EFMigrationsHistory`**. |
+| Apply up to a specific migration | `dotnet ef database update <MigrationName>` | Same as above, but stops after the named migration. |
+| List migrations | `dotnet ef migrations list` | Shows migrations on disk and which are recorded in `__EFMigrationsHistory`. |
+
+Run these from the folder that contains `RoyalVillaApi.csproj` (after `dotnet tool install --global dotnet-ef` if needed). Example end-to-end after editing seed data in `Data/AppDbContext.cs`:
+
+```bash
+dotnet ef migrations add SeedVillas
+dotnet ef database update
+```
+
+`dotnet ef database update` is the command that executes migrations against PostgreSQL: it updates schema and data (including seed `INSERT`s) and records each migration in **`__EFMigrationsHistory`** so EF Core knows which migrations have already run.
+
+On application startup, **`Program.cs`** also calls `Database.MigrateAsync()`, which applies any pending migrations the same way (including updating `__EFMigrationsHistory`). For local development you can rely on either `dotnet ef database update` or simply running the API once both are configured.
 
 ### Migration related information in C#
 
 ![Migration level settings in Visual Studio / VS Code](.vscode/README/Migration-Level-Settings.webp)
+
