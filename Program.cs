@@ -38,6 +38,8 @@ builder.Services.AddOpenApi(options =>
 builder.Services.AddAutoMapper(cfg =>
 {
     cfg.CreateMap<VillaCreateDTO, Villa>();
+    cfg.CreateMap<VillaUpdateDTO, Villa>()
+        .ForMember(dest => dest.Id, opt => opt.Ignore());
 });
 var app = builder.Build();
 await SeedDataAsync(app);

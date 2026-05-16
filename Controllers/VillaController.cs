@@ -173,6 +173,84 @@ public class VillaController : ControllerBase
         }
     }
 
+    /// <summary>
+    ///     POST a new villa: accept input as JSON, persist it, and return 201 Created with a Location header.
+    /// </summary>
+    /// <remarks>
+    ///     <b>HTTP and routing</b>
+    ///     <para>
+    ///         <c>[HttpPost]</c> — Handles HTTP POST on <c>api/villa</c> (no <c>{id}</c> in the path).
+    ///         POST is the conventional verb for <b>creating</b> a resource, as opposed to GET (read)
+    ///         or PUT/PATCH (update). The request body is JSON deserialized into
+    ///         <see cref="VillaCreateDTO"/> (model binding), similar to <c>@RequestBody</c> in Spring or
+    ///         <c>req.body</c> in Express when a JSON middleware is enabled.
+    ///     </para>
+    ///     <para>
+    ///         <c>[ProducesResponseType(...)]</c> — Documents 201, 400, and 500 for OpenAPI/Swagger; they
+    ///         do not change runtime behavior.
+    ///     </para>
+    ///     <b>DTO vs entity</b>
+    ///     <para>
+    ///         <see cref="VillaCreateDTO"/> is a <b>Data Transfer Object</b>: the shape the client sends
+    ///         when creating a villa (name, details, rate, etc.). It intentionally omits server-owned fields
+    ///         such as <see cref="Villa.Id"/> — the database generates the id on insert. This separation
+    ///         is common in APIs (request DTO vs persistence model) and avoids clients supplying primary keys.
+    ///     </para>
+    ///     <para>
+    ///         <c>_mapper.Map&lt;Villa&gt;(villaCreateDTO)</c> — AutoMapper copies matching properties from
+    ///         the DTO into a new <see cref="Villa"/> entity (like MapStruct in Java or manual field mapping
+    ///         in other stacks). Mapping is configured at startup in <c>Program.cs</c>.
+    ///     </para>
+    ///     <b>Database write (EF Core)</b>
+    ///     <para>
+    ///         <c>AddAsync(villa)</c> — Stages the entity in the change tracker as <b>Added</b>; no SQL
+    ///         INSERT runs yet. Think of it as “queue this row for insert.”
+    ///     </para>
+    ///     <para>
+    ///         <c>SaveChangesAsync()</c> — Flushes pending changes to the database (here, one INSERT).
+    ///         After this call, <c>villa.Id</c> is populated if the key is database-generated (identity column).
+    ///     </para>
+    ///     <b>Return type and 201 Created</b>
+    ///     <para>
+    ///         <c>Task&lt;ActionResult&lt;Villa&gt;&gt;</c> — Asynchronous action that eventually returns an
+    ///         HTTP wrapper; on success the body is the created <see cref="Villa"/> (including the new id).
+    ///     </para>
+    ///     <para>
+    ///         <c>CreatedAtAction(nameof(GetVillaById), new { id = villa.Id }, villa)</c> — Returns
+    ///         <b>201 Created</b> with:
+    ///         (1) a <c>Location</c> header pointing at the GET-by-id URL (e.g. <c>api/villa/5</c>),
+    ///         (2) the created resource in the response body.
+    ///         <c>nameof(GetVillaById)</c> resolves to the string <c>"GetVillaById"</c> at compile time
+    ///         (refactor-safe). <c>new { id = villa.Id }</c> is an anonymous object supplying route values
+    ///         for that action — like building path params for a redirect URL.
+    ///     </para>
+    ///     <b>Validation and errors</b>
+    ///     <para>
+    ///         <c>if (villaCreateDTO == null)</c> — Guards a missing body; returns 400. Data annotations on
+    ///         <see cref="VillaCreateDTO"/> (e.g. <c>[Required]</c>, <c>[MaxLength]</c>) can also produce 400
+    ///         when model validation runs (if enabled globally or via <c>[ApiController]</c>).
+    ///     </para>
+    ///     <para>
+    ///         <c>try</c> / <c>catch</c> — Unexpected failures (database, mapping) become 500 with
+    ///         <c>ex.Message</c> in the body instead of an unhandled exception page.
+    ///     </para>
+    ///     <b>Typical questions from other languages</b>
+    ///     <para>
+    ///         <b>Why not return 200 OK?</b> — REST conventions use <b>201 Created</b> for successful creation,
+    ///         often with <c>Location</c> set to the new resource’s URL.
+    ///     </para>
+    ///     <para>
+    ///         <b>Why map DTO → entity instead of saving the DTO directly?</b> — The entity matches the
+    ///         database table and EF Core’s model; the DTO is the public API contract and can differ (extra
+    ///         fields omitted, different names, validation only on input).
+    ///     </para>
+    ///     <para>
+    ///         <b>When is the id available?</b> — Only after <c>SaveChangesAsync</c>; before that,
+    ///         <c>villa.Id</c> is typically 0 or default.
+    ///     </para>
+    /// </remarks>
+    /// <param name="villaCreateDTO">JSON body with villa fields to create; must not be null.</param>
+    /// <returns>201 Created with Location and the new villa, 400 if the body is missing, 500 on failure.</returns>
     [HttpPost]
     [ProducesResponseType(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -187,16 +265,132 @@ public class VillaController : ControllerBase
             }
 
             var villa = _mapper.Map<Villa>(villaCreateDTO);
-            
+
             await _dbContext.Villas.AddAsync(villa);
             await _dbContext.SaveChangesAsync();
-            return Ok(villa);
+            return CreatedAtAction(nameof(GetVillaById), new { id = villa.Id }, villa);
         }
         catch (Exception ex)
         {
-            return StatusCode(StatusCodes.Status500InternalServerError, 
-            $"An error occurred while creating the villa: {ex.Message}"
-            );
+            return StatusCode(StatusCodes.Status500InternalServerError, $"An error occurred while creating the villa: {ex.Message}");
         }
     }
+
+    /// <summary>
+    ///     PUT an existing villa by route id: accept JSON, update the row, and return 200 OK with the updated entity.
+    /// </summary>
+    /// <remarks>
+    ///     <b>HTTP and routing</b>
+    ///     <para>
+    ///         <c>[HttpPut("{id:int}")]</c> — Handles HTTP PUT on <c>api/villa/{id}</c>. PUT is the conventional
+    ///         verb for <b>replacing or updating</b> a resource at a known URL. The <c>{id:int}</c> route
+    ///         constraint ensures only integer path segments match (same as <see cref="GetVillaById"/>). The
+    ///         matched value is bound to <paramref name="id"/>; the JSON body is bound to
+    ///         <see cref="VillaUpdateDTO"/>.
+    ///     </para>
+    ///     <para>
+    ///         <c>[ProducesResponseType(...)]</c> — Documents 200, 400, 404, and 500 for OpenAPI/Scalar; they do
+    ///         not change runtime behavior.
+    ///     </para>
+    ///     <b>DTO vs entity</b>
+    ///     <para>
+    ///         <see cref="VillaUpdateDTO"/> mirrors <see cref="VillaCreateDTO"/>: updatable fields only (name,
+    ///         details, rate, etc.). It omits <see cref="Villa.Id"/> — the client identifies the resource via
+    ///         the URL, not the body. AutoMapper is configured to <b>ignore</b> <see cref="Villa.Id"/> when
+    ///         mapping so the primary key cannot be overwritten by mistake.
+    ///     </para>
+    ///     <para>
+    ///         <c>_mapper.Map(villaUpdateDTO, existingVilla)</c> — Copies matching properties from the DTO onto
+    ///         an <b>existing</b> tracked <see cref="Villa"/> (the two-argument overload), unlike create which
+    ///         maps into a new entity. Server-owned fields not on the DTO (e.g. <see cref="Villa.CreatedDate"/>)
+    ///         are left unchanged.
+    ///     </para>
+    ///     <b>Database update (EF Core)</b>
+    ///     <para>
+    ///         <c>FirstOrDefaultAsync(v =&gt; v.Id == id)</c> — Loads the row to update or returns <c>null</c>
+    ///         if missing (→ 404). The entity is <b>tracked</b> by the change tracker after this query.
+    ///     </para>
+    ///     <para>
+    ///         After mapping, <c>existingVilla.UpdatedDate = DateTime.Now.ToUniversalTime()</c> sets the audit
+    ///         timestamp. <c>SaveChangesAsync()</c> issues an SQL <c>UPDATE</c> for modified columns, not an
+    ///         <c>INSERT</c>.
+    ///     </para>
+    ///     <b>Return type and 200 OK</b>
+    ///     <para>
+    ///         <c>Task&lt;ActionResult&lt;Villa&gt;&gt;</c> — Asynchronous action that eventually returns an
+    ///         HTTP wrapper; on success the body is the updated <see cref="Villa"/> (same id, new field values).
+    ///     </para>
+    ///     <para>
+    ///         <c>return Ok(existingVilla)</c> — <b>200 OK</b> with the updated resource in the body (REST
+    ///         convention for successful update when returning the representation).
+    ///     </para>
+    ///     <b>Validation and errors</b>
+    ///     <para>
+    ///         <c>if (id &lt;= 0)</c> — Returns 400 when the route id is not a positive business key (the route
+    ///         allows any integer, including 0 and negatives).
+    ///     </para>
+    ///     <para>
+    ///         <c>if (villaUpdateDTO == null)</c> — Returns 400 when the body failed to bind (e.g. missing body).
+    ///         Data annotations on <see cref="VillaUpdateDTO"/> (e.g. <c>[Required]</c>, <c>[MaxLength]</c>)
+    ///         can also produce 400 via <c>[ApiController]</c> model validation. Numeric fields in JSON must be
+    ///         numbers, not empty strings, or deserialization fails before this action runs.
+    ///     </para>
+    ///     <para>
+    ///         <c>if (existingVilla == null)</c> — Returns 404 when no villa exists for <paramref name="id"/>.
+    ///     </para>
+    ///     <para>
+    ///         <c>try</c> / <c>catch</c> — Unexpected failures (database, mapping) become 500 with
+    ///         <c>ex.Message</c> in the body.
+    ///     </para>
+    ///     <b>Typical questions from other languages</b>
+    ///     <para>
+    ///         <b>PUT vs PATCH?</b> — This action performs a full update of the DTO-shaped fields on the entity.
+    ///         PATCH would send partial changes; here the client supplies the full updatable shape each time.
+    ///     </para>
+    ///     <para>
+    ///         <b>Why is id only in the URL?</b> — Avoids duplicate id in path and body, matches create (no client
+    ///         id), and prevents binding errors from sending <c>""</c> for an <c>int</c> in JSON.
+    ///     </para>
+    ///     <para>
+    ///         <b>Why not return 204 No Content?</b> — Returning 200 with the updated body lets clients refresh
+    ///         UI state without a follow-up GET.
+    ///     </para>
+    /// </remarks>
+    /// <param name="id">Primary key of the villa to update; must be greater than zero.</param>
+    /// <param name="villaUpdateDTO">JSON body with fields to update; must not be null.</param>
+    /// <returns>200 OK with the updated villa, 400 if id or body is invalid, 404 if not found, 500 on failure.</returns>
+    [HttpPut("{id:int}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<Villa>> UpdateVilla(int id, VillaUpdateDTO villaUpdateDTO)
+    {
+        try
+        {
+            if (id <= 0)
+            {
+                return BadRequest("Id is required");
+            }
+            if (villaUpdateDTO == null)
+            {
+                return BadRequest("Villa is required");
+            }
+            var existingVilla = await _dbContext.Villas.FirstOrDefaultAsync(v => v.Id == id);
+            if (existingVilla == null)
+            {
+                return NotFound($"Villa with id {id} not found");
+            }
+
+            _mapper.Map(villaUpdateDTO, existingVilla);
+            existingVilla.UpdatedDate = DateTime.Now.ToUniversalTime();
+            await _dbContext.SaveChangesAsync();
+            return Ok(existingVilla);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, $"An error occurred while updating the villa: {ex.Message}");
+        }
+    }
+
 }

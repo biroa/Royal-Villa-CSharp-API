@@ -1,7 +1,7 @@
 namespace RoyalVillaApi.Models.DTO;
 using System.ComponentModel.DataAnnotations;
 
-public class VillaCreateDTO
+public class VillaUpdateDTO
 {
     [MaxLength(50)]
     [Required]
