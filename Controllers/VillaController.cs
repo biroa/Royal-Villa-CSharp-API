@@ -393,4 +393,99 @@ public class VillaController : ControllerBase
         }
     }
 
+    /// <summary>
+    ///     DELETE a villa by route id: remove the row from the database and return 204 No Content.
+    /// </summary>
+    /// <remarks>
+    ///     <b>HTTP and routing</b>
+    ///     <para>
+    ///         <c>[HttpDelete("{id:int}")]</c> — Handles HTTP DELETE on <c>api/villa/{id}</c>. DELETE is the
+    ///         conventional verb for <b>removing</b> a resource. The <c>{id:int}</c> route constraint ensures only
+    ///         integer path segments match (same as <see cref="GetVillaById"/> and <see cref="UpdateVilla"/>). The
+    ///         matched value is bound to <paramref name="id"/>; there is no request body.
+    ///     </para>
+    ///     <para>
+    ///         <c>[ProducesResponseType(...)]</c> — Documents 204, 400, 404, and 500 for OpenAPI/Scalar; they do
+    ///         not change runtime behavior.
+    ///     </para>
+    ///     <b>Database delete (EF Core)</b>
+    ///     <para>
+    ///         <c>FirstOrDefaultAsync(v =&gt; v.Id == id)</c> — Loads the row to delete or returns <c>null</c>
+    ///         if missing (→ 404). The entity must exist and be tracked before removal.
+    ///     </para>
+    ///     <para>
+    ///         <c>Remove(existingVilla)</c> — Marks the entity as <b>Deleted</b> in the change tracker; no SQL
+    ///         <c>DELETE</c> runs until <c>SaveChangesAsync()</c>.
+    ///     </para>
+    ///     <para>
+    ///         <c>SaveChangesAsync()</c> — Flushes the pending delete to the database (one <c>DELETE</c> statement
+    ///         for this row).
+    ///     </para>
+    ///     <b>Return type and 204 No Content</b>
+    ///     <para>
+    ///         <c>Task&lt;ActionResult&lt;Villa&gt;&gt;</c> — The generic type documents the resource kind for
+    ///         OpenAPI; on success this action returns <b>no body</b>.
+    ///     </para>
+    ///     <para>
+    ///         <c>return NoContent()</c> — <b>204 No Content</b>, the usual REST response for a successful delete
+    ///         when the client does not need the deleted representation in the response.
+    ///     </para>
+    ///     <b>Validation and errors</b>
+    ///     <para>
+    ///         <c>if (id &lt;= 0)</c> — Returns 400 when the route id is not a positive business key.
+    ///     </para>
+    ///     <para>
+    ///         <c>if (existingVilla == null)</c> — Returns 404 when no villa exists for <paramref name="id"/>.
+    ///     </para>
+    ///     <para>
+    ///         <c>try</c> / <c>catch</c> — Unexpected failures (database) become 500 with <c>ex.Message</c> in
+    ///         the body.
+    ///     </para>
+    ///     <b>Typical questions from other languages</b>
+    ///     <para>
+    ///         <b>Hard delete vs soft delete?</b> — This action <b>physically removes</b> the row. A soft delete
+    ///         would set a flag (e.g. <c>IsDeleted</c>) and filter it out of queries instead of calling
+    ///         <c>Remove</c>.
+    ///     </para>
+    ///     <para>
+    ///         <b>Why 204 instead of 200 with the deleted villa?</b> — After deletion the resource no longer exists;
+    ///         204 signals success without implying a retrievable body. Clients that need the last snapshot should
+    ///         GET before DELETE.
+    ///     </para>
+    ///     <para>
+    ///         <b>Is DELETE idempotent?</b> — Deleting the same id twice: first call → 204; second call → 404
+    ///         because the row is already gone (not strictly idempotent in the strictest sense, but safe to retry).
+    ///     </para>
+    /// </remarks>
+    /// <param name="id">Primary key of the villa to delete; must be greater than zero.</param>
+    /// <returns>204 No Content on success, 400 if id is invalid, 404 if not found, 500 on failure.</returns>
+    [HttpDelete("{id:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<Villa>> DeleteVilla(int id)
+    {
+        try
+        {
+            if (id <= 0)
+            {
+                return BadRequest("Id is required");
+            }
+            var existingVilla = await _dbContext.Villas.FirstOrDefaultAsync(v => v.Id == id);
+            if (existingVilla == null)
+            {
+                return NotFound($"Villa with id {id} not found");
+            }
+
+            _dbContext.Villas.Remove(existingVilla);
+            await _dbContext.SaveChangesAsync();
+            return NoContent();
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, $"An error occurred while deleting the villa: {ex.Message}");
+        }
+    }
+
 }
