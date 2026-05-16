@@ -18,6 +18,49 @@ dotnet restore
 dotnet build
 ```
 
+### What to do if the build hangs
+
+`dotnet build` (including `dotnet build --no-restore`) can appear stuck for 45+ seconds with no output. That is usually **not** a code or AutoMapper problem. The build is waiting on the **Roslyn compiler server** (`VBCSCompiler`), often because another `dotnet` process still holds it.
+
+**Common causes**
+
+| Cause | What happened |
+|-------|----------------|
+| App still running | `dotnet run` is active in another terminal or from the debugger |
+| Suspended process | The run was stopped with **Ctrl+Z** instead of **Ctrl+C** |
+| Parallel builds | IDE build + terminal build (or multiple terminals) at the same time |
+
+**Fix**
+
+1. Stop the API with **Ctrl+C** in any terminal where it is running.
+2. If the build still does not finish, kill leftover processes and rebuild:
+
+   ```bash
+   pkill -9 -f 'dotnet run.*RoyalVillaApi'
+   pkill -9 -f VBCSCompiler
+   dotnet build --no-restore
+   ```
+
+   A healthy build should complete in a few seconds.
+
+**If it keeps happening**
+
+Disable the shared compiler for one build:
+
+```bash
+DOTNET_UseSharedCompilation=false dotnet build --no-restore
+```
+
+Or add to `RoyalVillaApi.csproj` (slower builds, fewer deadlocks):
+
+```xml
+<PropertyGroup>
+  <UseSharedCompilation>false</UseSharedCompilation>
+</PropertyGroup>
+```
+
+**Note:** A very slow first build is sometimes **NuGet restore** retrying against `api.nuget.org`. Run `dotnet restore` once, then use `dotnet build --no-restore`.
+
 ---
 
 ## Run the application

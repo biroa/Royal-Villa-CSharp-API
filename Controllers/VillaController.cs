@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using RoyalVillaApi.Data;
 using RoyalVillaApi.Models;
 using RoyalVillaApi.Models.DTO;
-
+using AutoMapper;
 namespace RoyalVillaApi.Controllers;
 
 [ApiController]
@@ -12,10 +12,11 @@ namespace RoyalVillaApi.Controllers;
 public class VillaController : ControllerBase
 {
     private readonly AppDbContext _dbContext;
-
-    public VillaController(AppDbContext dbContext)
+    private readonly IMapper _mapper;
+    public VillaController(AppDbContext dbContext, IMapper mapper)
     {
         _dbContext = dbContext;
+        _mapper = mapper;
     }
 
     /// <summary>
@@ -185,16 +186,7 @@ public class VillaController : ControllerBase
                 return BadRequest("Villa is required");
             }
 
-            var villa = new Villa
-            {
-                Name = villaCreateDTO.Name,
-                Details = villaCreateDTO.Details,
-                Rate = villaCreateDTO.Rate,
-                Sqft = villaCreateDTO.Sqft,
-                Occupancy = villaCreateDTO.Occupancy,
-                ImageUrl = villaCreateDTO.ImageUrl,
-                CreatedDate = DateTime.Now.ToUniversalTime()
-            };
+            var villa = _mapper.Map<Villa>(villaCreateDTO);
             
             await _dbContext.Villas.AddAsync(villa);
             await _dbContext.SaveChangesAsync();

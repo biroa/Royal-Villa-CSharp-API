@@ -4,6 +4,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
 using RoyalVillaApi.Data;
 using Scalar.AspNetCore;
+using RoyalVillaApi.Models.DTO;
+using RoyalVillaApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -33,7 +35,10 @@ builder.Services.AddOpenApi(options =>
         return Task.CompletedTask;
     });
 });
-
+builder.Services.AddAutoMapper(cfg =>
+{
+    cfg.CreateMap<VillaCreateDTO, Villa>();
+});
 var app = builder.Build();
 await SeedDataAsync(app);
 
