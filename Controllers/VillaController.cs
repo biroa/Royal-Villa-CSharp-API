@@ -20,41 +20,55 @@ public class VillaController : ControllerBase
     }
 
     /// <summary>
-    ///     GET all villas from the database and return them as JSON.
+    ///     GET all villas from the database and return them inside a uniform <see cref="ApiResponse{TData}"/> envelope.
     /// </summary>
     /// <remarks>
-    ///     The return type is built from three nested concepts:
+    ///     <b>Return type (read inside-out)</b>
     ///     <para>
-    ///         <b>Task</b> — Marks this action as asynchronous. The method can await I/O (here,
-    ///         <c>ToListAsync</c>) without blocking a thread while the database responds. Callers
-    ///         receive a <see cref="Task{TResult}"/> that completes when the query finishes and
-    ///         the HTTP response is ready.
+    ///         <b>Task</b> — Asynchronous action; <c>await ToListAsync</c> does not block a thread while the database responds.
     ///     </para>
     ///     <para>
-    ///         <b>ActionResult</b> — An ASP.NET Core wrapper for an HTTP outcome: status code,
-    ///         headers, and optional body. <see cref="ControllerBase.Ok(object?)"/> produces
-    ///         200 OK with a serialized payload; other helpers (e.g. NotFound, BadRequest) set
-    ///         different status codes without changing the action’s signature.
+    ///         <b>ActionResult&lt;ApiResponse&lt;IEnumerable&lt;VillaDTO&gt;&gt;&gt;</b> — HTTP wrapper whose body is always the
+    ///         same envelope shape (<c>success</c>, <c>statusCode</c>, <c>message</c>, <c>data</c>, <c>errors</c>, <c>timestamp</c>),
+    ///         not a raw JSON array. On success, <c>data</c> holds the mapped <see cref="VillaDTO"/> collection.
+    ///     </para>
+    ///     <b>ApiResponse static factories</b>
+    ///     <para>
+    ///         <see cref="ApiResponse{TData}.Ok(TData, string)"/> — Builds a success envelope (200) with message
+    ///         <c>"Villas fetched successfully"</c> and <c>Data</c> set to the DTO list. Passed to
+    ///         <see cref="ControllerBase.Ok(object?)"/> so the HTTP status and envelope <c>StatusCode</c> align.
     ///     </para>
     ///     <para>
-    ///         <b>IEnumerable{Villa}</b> — The shape of the success payload: a sequence of
-    ///         <see cref="Villa"/> records. The serializer turns this into a JSON array. EF Core
-    ///         materializes the query with <c>ToListAsync</c> before returning, so the client
-    ///         gets a concrete list rather than a deferred database cursor.
+    ///         <see cref="ApiResponse{TData}.InternalServerError(string)"/> — Used in <c>catch</c> with
+    ///         <see cref="ControllerBase.StatusCode(int, object?)"/> for unexpected failures (500).
     ///     </para>
-    ///     Read together: <c>Task&lt;ActionResult&lt;IEnumerable&lt;Villa&gt;&gt;&gt;</c> means
-    ///     “eventually return an HTTP result whose 200 body is a collection of villas.”
+    ///     <b>Data flow</b>
+    ///     <para>
+    ///         EF Core loads <see cref="Villa"/> entities, AutoMapper maps them to <see cref="VillaDTO"/>, then the factory
+    ///         wraps the sequence in <see cref="ApiResponse{TData}"/> before serialization.
+    ///     </para>
     /// </remarks>
-    /// <returns>200 OK with all villas when the query succeeds.</returns>
+    /// <returns>200 OK with <see cref="ApiResponse{TData}"/> whose <c>data</c> contains all villas; 500 on failure.</returns>
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<VillaDTO>>> GetVillas()
+    public async Task<ActionResult<ApiResponse<IEnumerable<VillaDTO>>>> GetVillas()
     {
-        var villas = await _dbContext.Villas.ToListAsync();
-        return Ok(_mapper.Map<IEnumerable<VillaDTO>>(villas));
+        try
+        {
+            var villas = await _dbContext.Villas.ToListAsync();
+            var dtoResponse = _mapper.Map<IEnumerable<VillaDTO>>(villas);
+            return Ok(ApiResponse<IEnumerable<VillaDTO>>.Ok(dtoResponse, "Villas fetched successfully"));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(
+                StatusCodes.Status500InternalServerError,
+                ApiResponse<IEnumerable<VillaDTO>>.InternalServerError(
+                    $"An error occurred while fetching villas: {ex.Message}"));
+        }
     }
 
     /// <summary>
-    ///     GET a single villa by its numeric id from the route, or return an error status.
+    ///     GET a single villa by route id and return it in a <see cref="ApiResponse{VillaDTO}"/> envelope, or an error envelope.
     /// </summary>
     /// <remarks>
     ///     <b>Route and binding</b>
@@ -77,17 +91,31 @@ public class VillaController : ControllerBase
     ///         the HTTP response is ready.
     ///     </para>
     ///     <para>
-    ///         <b>ActionResult</b> — Wraps the HTTP outcome (status, headers, body).
+    ///         <b>ActionResult&lt;ApiResponse&lt;VillaDTO&gt;&gt;</b> — Wraps the HTTP outcome (status, headers, body).
     ///         <see cref="ControllerBase.Ok(object?)"/> → 200,
     ///         <see cref="ControllerBase.BadRequest(object?)"/> → 400,
     ///         <see cref="ControllerBase.NotFound(object?)"/> → 404,
-    ///         <see cref="ControllerBase.StatusCode(int, object?)"/> → arbitrary code (here 500).
-    ///         One method signature can return different status codes via these helpers.
+    ///         <see cref="ControllerBase.StatusCode(int, object?)"/> → 500.
+    ///         Every outcome uses the same <see cref="ApiResponse{TData}"/> JSON shape; only <c>success</c>, <c>message</c>,
+    ///         <c>data</c>, and <c>errors</c> differ.
     ///     </para>
     ///     <para>
-    ///         <b>Villa</b> — On success, the 200 body is one <see cref="Villa"/> entity serialized
-    ///         to JSON (not a list). <c>Task&lt;ActionResult&lt;Villa&gt;&gt;</c> means “eventually
-    ///         return an HTTP result whose success body is a single villa.”
+    ///         <b>VillaDTO in Data</b> — On success, <see cref="ApiResponse{TData}.Ok(TData, string)"/> sets
+    ///         <c>Data</c> to one mapped <see cref="VillaDTO"/> (not the EF <see cref="Villa"/> entity).
+    ///     </para>
+    ///     <b>ApiResponse static factories used here</b>
+    ///     <para>
+    ///         <see cref="ApiResponse{TData}.BadRequest(string, object?)"/> — Invalid <paramref name="id"/> (≤ 0);
+    ///         optional <c>errors</c> lists validation detail (e.g. <c>"Villa id must be greater than 0"</c>).
+    ///     </para>
+    ///     <para>
+    ///         <see cref="ApiResponse{TData}.NotFound(string)"/> — No row for the given id.
+    ///     </para>
+    ///     <para>
+    ///         <see cref="ApiResponse{TData}.Ok(TData, string)"/> — Success with <c>"Villa fetched successfully"</c>.
+    ///     </para>
+    ///     <para>
+    ///         <see cref="ApiResponse{TData}.InternalServerError(string)"/> — Unexpected exception in <c>catch</c>.
     ///     </para>
     ///     <b>Keywords and patterns in the method body</b>
     ///     <para>
@@ -134,17 +162,19 @@ public class VillaController : ControllerBase
     ///         business rules.
     ///     </para>
     ///     <para>
-    ///         <b>Why return <c>ActionResult&lt;Villa&gt;</c> instead of <c>Villa</c>?</b> — So the
-    ///         same method can return 200 with a body or 400/404/500 without exceptions as control
-    ///         flow. Returning only <c>Villa</c> would always imply 200 unless you throw.
+    ///         <b>Why <c>ActionResult&lt;ApiResponse&lt;VillaDTO&gt;&gt;</c>?</b> — Combines flexible HTTP status codes
+    ///         with a predictable JSON envelope clients can parse once for all villa endpoints.
     ///     </para>
     ///     <para>
-    ///         <b>Is <c>return Ok(...)</c> the HTTP response?</b> — Yes. The framework converts it
-    ///         to a response with status 200 and JSON body; you do not write headers manually.
+    ///         <b>Is <c>return Ok(ApiResponse...)</c> the HTTP response?</b> — Yes. The framework sets status 200 and
+    ///         serializes the envelope; factory methods set matching <c>StatusCode</c> and <c>Success</c> inside the body.
     ///     </para>
     /// </remarks>
     /// <param name="id">Primary key of the villa; must be greater than zero.</param>
-    /// <returns>200 OK with the villa, 400 if id is invalid, 404 if not found, 500 on failure.</returns>
+    /// <returns>
+    ///     200 OK with <see cref="ApiResponse{VillaDTO}"/> and <c>data</c> set to the villa;
+    ///     400/404/500 with the same envelope shape and <c>data</c> typically null.
+    /// </returns>
     [HttpGet("{id:int}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -156,39 +186,32 @@ public class VillaController : ControllerBase
         {
             if (id <= 0)
             {
-                return new ApiResponse<VillaDTO> {
-                    
-                    StatusCode = StatusCodes.Status400BadRequest,
-                    Errors = new List<string> { "Villa id must be greater than 0" },
-                    Success = false,
-                    Message = "Id is required",            
-                };                
+                return BadRequest(ApiResponse<VillaDTO>.BadRequest(
+                    "Id is required",
+                    new List<string> { "Villa id must be greater than 0" }));
             }
             
             var villa = await _dbContext.Villas.FirstOrDefaultAsync(v => v.Id == id);           
             if (villa == null)
             {
-                return NotFound($"Villa with id {id} not found");
+                return NotFound(ApiResponse<VillaDTO>.NotFound($"Villa with id {id} not found"));
             }
-            
-            return new ApiResponse<VillaDTO> {
-                Data = _mapper.Map<VillaDTO>(villa),
-                StatusCode = StatusCodes.Status200OK,
-                Success = true,
-                Message = "Villa fetched successfully"
-            };
+
+            var dtoResponse = _mapper.Map<VillaDTO>(villa);
+            return Ok(ApiResponse<VillaDTO>.Ok(dtoResponse, "Villa fetched successfully"));
         }
         catch (Exception ex)
         {
-            return StatusCode(StatusCodes.Status500InternalServerError, 
-            $"An error occurred while fetching villa with id {id}: {ex.Message}"
-            );
+            return StatusCode(
+                StatusCodes.Status500InternalServerError,
+                ApiResponse<VillaDTO>.InternalServerError(
+                    $"An error occurred while fetching villa with id {id}: {ex.Message}"));
         }
     }
 
     /// <summary>
-    ///     POST a new villa: accept input as JSON, reject duplicate names with 409 Conflict, persist it, and return
-    ///     201 Created with a Location header.
+    ///     POST a new villa: accept JSON, reject duplicate names with 409, persist, and return 201 Created with
+    ///     Location and a <see cref="ApiResponse{VillaDTO}"/> body.
     /// </summary>
     /// <remarks>
     ///     <b>HTTP and routing</b>
@@ -230,17 +253,22 @@ public class VillaController : ControllerBase
     ///     </para>
     ///     <b>Return type and 201 Created</b>
     ///     <para>
-    ///         <c>Task&lt;ActionResult&lt;Villa&gt;&gt;</c> — Asynchronous action that eventually returns an
-    ///         HTTP wrapper; on success the body is the created <see cref="Villa"/> (including the new id).
+    ///         <c>Task&lt;ActionResult&lt;ApiResponse&lt;VillaDTO&gt;&gt;&gt;</c> — Success body is
+    ///         <see cref="ApiResponse{VillaDTO}"/> with <c>Data</c> holding the created <see cref="VillaDTO"/> (including new id).
     ///     </para>
     ///     <para>
-    ///         <c>CreatedAtAction(nameof(GetVillaById), new { id = villa.Id }, villa)</c> — Returns
-    ///         <b>201 Created</b> with:
-    ///         (1) a <c>Location</c> header pointing at the GET-by-id URL (e.g. <c>api/villa/5</c>),
-    ///         (2) the created resource in the response body.
-    ///         <c>nameof(GetVillaById)</c> resolves to the string <c>"GetVillaById"</c> at compile time
-    ///         (refactor-safe). <c>new { id = villa.Id }</c> is an anonymous object supplying route values
-    ///         for that action — like building path params for a redirect URL.
+    ///         <c>CreatedAtAction(..., ApiResponse&lt;VillaDTO&gt;.CreatedAtAction(...))</c> — Returns
+    ///         <b>201 Created</b> with a <c>Location</c> header (GET-by-id URL) and an envelope built by
+    ///         <see cref="ApiResponse{TData}.CreatedAtAction(string, object?, TData?)"/>, which sets
+    ///         <c>StatusCode</c> 201, <c>Message</c> <c>"Created"</c>, and optional <c>errors</c> metadata
+    ///         (<c>actionName</c>, <c>routeValues</c>) for clients that read routing hints from the body.
+    ///     </para>
+    ///     <b>ApiResponse static factories used here</b>
+    ///     <para>
+    ///         <see cref="ApiResponse{TData}.BadRequest(string, object?)"/> — Missing body.
+    ///         <see cref="ApiResponse{TData}.Conflict(string)"/> — Duplicate name.
+    ///         <see cref="ApiResponse{TData}.CreatedAtAction(string, object?, TData?)"/> — 201 success envelope.
+    ///         <see cref="ApiResponse{TData}.InternalServerError(string)"/> — <c>catch</c> block.
     ///     </para>
     ///     <b>Validation and errors</b>
     ///     <para>
@@ -268,25 +296,29 @@ public class VillaController : ControllerBase
     ///     </para>
     /// </remarks>
     /// <param name="villaCreateDTO">JSON body with villa fields to create; must not be null.</param>
-    /// <returns>201 Created with Location and the new villa, 400 if the body is missing, 500 on failure.</returns>
+    /// <returns>
+    ///     201 Created with Location and <see cref="ApiResponse{VillaDTO}"/>; 400 if body missing; 409 on duplicate name; 500 on failure.
+    /// </returns>
     [HttpPost]
     [ProducesResponseType(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<VillaDTO>> CreateVilla(VillaCreateDTO villaCreateDTO)
+    public async Task<ActionResult<ApiResponse<VillaDTO>>> CreateVilla(VillaCreateDTO villaCreateDTO)
     {
         try
         {
             if (villaCreateDTO == null)
             {
-                return BadRequest("Villa is required");
+                return BadRequest(ApiResponse<VillaDTO>.BadRequest("Villa is required"));
             }
 
             var duplicateVilla = await _dbContext.Villas.FirstOrDefaultAsync(v => v.Name.ToLower() == villaCreateDTO.Name.ToLower());
             
             if (duplicateVilla != null)
             {
-                return Conflict($"Villa with name {villaCreateDTO.Name} already exists");
+                return Conflict(ApiResponse<VillaDTO>.Conflict(
+                    $"Villa with name {villaCreateDTO.Name} already exists"));
             }
 
             var villa = _mapper.Map<Villa>(villaCreateDTO);
@@ -294,17 +326,24 @@ public class VillaController : ControllerBase
 
             await _dbContext.Villas.AddAsync(villa);
             await _dbContext.SaveChangesAsync();
-            return CreatedAtAction(nameof(GetVillaById), new { id = villa.Id }, _mapper.Map<VillaDTO>(villa));
+            var dtoResponse = _mapper.Map<VillaDTO>(villa);
+            return CreatedAtAction(
+                nameof(GetVillaById),
+                new { id = villa.Id },
+                ApiResponse<VillaDTO>.CreatedAtAction(nameof(GetVillaById), new { id = villa.Id }, dtoResponse));
         }
         catch (Exception ex)
         {
-            return StatusCode(StatusCodes.Status500InternalServerError, $"An error occurred while creating the villa: {ex.Message}");
+            return StatusCode(
+                StatusCodes.Status500InternalServerError,
+                ApiResponse<VillaDTO>.InternalServerError(
+                    $"An error occurred while creating the villa: {ex.Message}"));
         }
     }
 
     /// <summary>
-    ///     PUT an existing villa by route id: accept JSON, reject duplicate names with 409 Conflict, update the row,
-    ///     and return 200 OK with the updated entity.
+    ///     PUT an existing villa by route id: accept JSON, reject duplicate names with 409, update the row, and return
+    ///     200 OK with a <see cref="ApiResponse{VillaDTO}"/> envelope.
     /// </summary>
     /// <remarks>
     ///     <b>HTTP and routing</b>
@@ -349,12 +388,17 @@ public class VillaController : ControllerBase
     ///     </para>
     ///     <b>Return type and 200 OK</b>
     ///     <para>
-    ///         <c>Task&lt;ActionResult&lt;Villa&gt;&gt;</c> — Asynchronous action that eventually returns an
-    ///         HTTP wrapper; on success the body is the updated <see cref="Villa"/> (same id, new field values).
+    ///         <c>Task&lt;ActionResult&lt;ApiResponse&lt;VillaDTO&gt;&gt;&gt;</c> — On success,
+    ///         <see cref="ApiResponse{TData}.Ok(TData, string)"/> wraps the updated <see cref="VillaDTO"/> with message
+    ///         <c>"Villa updated successfully"</c>.
     ///     </para>
+    ///     <b>ApiResponse static factories used here</b>
     ///     <para>
-    ///         <c>return Ok(existingVilla)</c> — <b>200 OK</b> with the updated resource in the body (REST
-    ///         convention for successful update when returning the representation).
+    ///         <see cref="ApiResponse{TData}.BadRequest(string, object?)"/> — Invalid id or missing body.
+    ///         <see cref="ApiResponse{TData}.NotFound(string)"/> — Villa not found.
+    ///         <see cref="ApiResponse{TData}.Conflict(string)"/> — Name taken by another villa.
+    ///         <see cref="ApiResponse{TData}.Ok(TData, string)"/> — Successful update.
+    ///         <see cref="ApiResponse{TData}.InternalServerError(string)"/> — <c>catch</c> block.
     ///     </para>
     ///     <b>Validation and errors</b>
     ///     <para>
@@ -372,8 +416,8 @@ public class VillaController : ControllerBase
     ///     </para>
     ///     <para>
     ///         <c>if (duplicateVilla != null)</c> — Returns <b>409 Conflict</b> via
-    ///         <c>Conflict(...)</c>. In ASP.NET Core, <c>Conflict</c> is a helper that sets the HTTP status to
-    ///         <b>409</b> and puts a short message in the body (e.g. “Villa with name … already exists”).
+    ///         <c>Conflict(ApiResponse...Conflict(...))</c>. The helper sets HTTP 409; the envelope carries
+    ///         <c>success: false</c>, <c>statusCode: 409</c>, and the message in <c>message</c>.
     ///         <b>409 Conflict</b> means: the request was understood and the target villa exists, but the change
     ///         cannot be applied because it clashes with another record (here, another villa already uses that
     ///         name). This is not a syntax error (400) or “wrong id” (404); it is a <b>state conflict</b>, like
@@ -407,50 +451,57 @@ public class VillaController : ControllerBase
     /// </remarks>
     /// <param name="id">Primary key of the villa to update; must be greater than zero.</param>
     /// <param name="villaUpdateDTO">JSON body with fields to update; must not be null.</param>
-    /// <returns>200 OK with the updated villa; 400 if id or body is invalid; 404 if not found; 409 if the name is already used by another villa; 500 on failure.</returns>
+    /// <returns>
+    ///     200 OK with <see cref="ApiResponse{VillaDTO}"/>; 400/404/409/500 with the same envelope shape on failure.
+    /// </returns>
     [HttpPut("{id:int}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<VillaDTO>> UpdateVilla(int id, VillaUpdateDTO villaUpdateDTO)
+    public async Task<ActionResult<ApiResponse<VillaDTO>>> UpdateVilla(int id, VillaUpdateDTO villaUpdateDTO)
     {
         try
         {
             if (id <= 0)
             {
-                return BadRequest("Id is required");
+                return BadRequest(ApiResponse<VillaDTO>.BadRequest("Id is required"));
             }
             if (villaUpdateDTO == null)
             {
-                return BadRequest("Villa is required");
+                return BadRequest(ApiResponse<VillaDTO>.BadRequest("Villa is required"));
             }
             var existingVilla = await _dbContext.Villas.FirstOrDefaultAsync(v => v.Id == id);
             if (existingVilla == null)
             {
-                return NotFound($"Villa with id {id} not found");
+                return NotFound(ApiResponse<VillaDTO>.NotFound($"Villa with id {id} not found"));
             }
             var duplicateVilla = await _dbContext.Villas.FirstOrDefaultAsync(v => v.Name.ToLower() == villaUpdateDTO.Name.ToLower() && v.Id != id);
             
             if (duplicateVilla != null)
             {
-                return Conflict($"Villa with name {villaUpdateDTO.Name} already exists");
+                return Conflict(ApiResponse<VillaDTO>.Conflict(
+                    $"Villa with name {villaUpdateDTO.Name} already exists"));
             }
 
             _mapper.Map(villaUpdateDTO, existingVilla);
             existingVilla.UpdatedDate = DateTime.UtcNow;
             await _dbContext.SaveChangesAsync();
-            return Ok(_mapper.Map<VillaDTO>(existingVilla));
+            var dtoResponse = _mapper.Map<VillaDTO>(existingVilla);
+            return Ok(ApiResponse<VillaDTO>.Ok(dtoResponse, "Villa updated successfully"));
         }
         catch (Exception ex)
         {
-            return StatusCode(StatusCodes.Status500InternalServerError, $"An error occurred while updating the villa: {ex.Message}");
+            return StatusCode(
+                StatusCodes.Status500InternalServerError,
+                ApiResponse<VillaDTO>.InternalServerError(
+                    $"An error occurred while updating the villa: {ex.Message}"));
         }
     }
 
     /// <summary>
-    ///     DELETE a villa by route id: remove the row from the database and return 204 No Content.
+    ///     DELETE a villa by route id: remove the row and return 204 No Content with a <see cref="ApiResponse{object}"/> envelope.
     /// </summary>
     /// <remarks>
     ///     <b>HTTP and routing</b>
@@ -479,12 +530,15 @@ public class VillaController : ControllerBase
     ///     </para>
     ///     <b>Return type and 204 No Content</b>
     ///     <para>
-    ///         <c>Task&lt;ActionResult&lt;Villa&gt;&gt;</c> — The generic type documents the resource kind for
-    ///         OpenAPI; on success this action returns <b>no body</b>.
+    ///         <c>Task&lt;ActionResult&lt;ApiResponse&lt;object?&gt;&gt;&gt;</c> — Uses <c>object?</c> as the generic
+    ///         argument because delete has no resource payload; <c>Data</c> stays null on success.
     ///     </para>
     ///     <para>
-    ///         <c>return NoContent()</c> — <b>204 No Content</b>, the usual REST response for a successful delete
-    ///         when the client does not need the deleted representation in the response.
+    ///         <c>StatusCode(204, ApiResponse&lt;object?&gt;.NoContent())</c> — HTTP 204 with an envelope from
+    ///         <see cref="ApiResponse{TData}.NoContent()"/> (<c>success: true</c>, <c>message: "No content"</c>).
+    ///         Errors still use <see cref="ApiResponse{TData}.BadRequest(string, object?)"/>,
+    ///         <see cref="ApiResponse{TData}.NotFound(string)"/>, and
+    ///         <see cref="ApiResponse{TData}.InternalServerError(string)"/>.
     ///     </para>
     ///     <b>Validation and errors</b>
     ///     <para>
@@ -514,33 +568,38 @@ public class VillaController : ControllerBase
     ///     </para>
     /// </remarks>
     /// <param name="id">Primary key of the villa to delete; must be greater than zero.</param>
-    /// <returns>204 No Content on success, 400 if id is invalid, 404 if not found, 500 on failure.</returns>
+    /// <returns>
+    ///     204 with <see cref="ApiResponse{object}"/> on success; 400/404/500 with the same envelope shape on failure.
+    /// </returns>
     [HttpDelete("{id:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<Villa>> DeleteVilla(int id)
+    public async Task<ActionResult<ApiResponse<object?>>> DeleteVilla(int id)
     {
         try
         {
             if (id <= 0)
             {
-                return BadRequest("Id is required");
+                return BadRequest(ApiResponse<object?>.BadRequest("Id is required"));
             }
             var existingVilla = await _dbContext.Villas.FirstOrDefaultAsync(v => v.Id == id);
             if (existingVilla == null)
             {
-                return NotFound($"Villa with id {id} not found");
+                return NotFound(ApiResponse<object?>.NotFound($"Villa with id {id} not found"));
             }
     
             _dbContext.Villas.Remove(existingVilla);
             await _dbContext.SaveChangesAsync();
-            return NoContent();
+            return StatusCode(StatusCodes.Status204NoContent, ApiResponse<object?>.NoContent());
         }
         catch (Exception ex)
         {
-            return StatusCode(StatusCodes.Status500InternalServerError, $"An error occurred while deleting the villa: {ex.Message}");
+            return StatusCode(
+                StatusCodes.Status500InternalServerError,
+                ApiResponse<object?>.InternalServerError(
+                    $"An error occurred while deleting the villa: {ex.Message}"));
         }
     }
 

@@ -29,8 +29,8 @@ public class ApiResponse<TData>
     public static ApiResponse<TData> InternalServerError(string message) => 
         Create(false, StatusCodes.Status500InternalServerError, message);
 
-    public static ApiResponse<TData> Ok(TData data) => 
-        Create(true, StatusCodes.Status200OK, "Success", data);
+    public static ApiResponse<TData> Ok(TData data, string message = "Success") => 
+        Create(true, StatusCodes.Status200OK, message, data);
 
     public static ApiResponse<TData> Created(TData data) => 
         Create(true, StatusCodes.Status201Created, "Created", data);
