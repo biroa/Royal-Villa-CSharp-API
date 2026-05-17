@@ -371,6 +371,17 @@ public class VillaController : ControllerBase
     ///         maps into a new entity. Server-owned fields not on the DTO (e.g. <see cref="Villa.CreatedDate"/>)
     ///         are left unchanged.
     ///     </para>
+    ///     <b>Important: send the full updatable payload</b>
+    ///     <para>
+    ///         This endpoint behaves like a <b>full replace</b> of every field on <see cref="VillaUpdateDTO"/>, not a
+    ///         partial PATCH. If the client <b>omits</b> a property from the JSON body, model binding still sets that
+    ///         DTO member to its default (<c>null</c> for <c>string?</c>, <c>0</c> for numbers). AutoMapper then
+    ///         copies those defaults onto the tracked <see cref="Villa"/>, and <c>SaveChangesAsync</c> persists them—so
+    ///         omitted optional fields such as <see cref="VillaUpdateDTO.Details"/> or
+    ///         <see cref="VillaUpdateDTO.ImageUrl"/> can be <b>cleared in the database</b>, and omitted numeric fields
+    ///         can be saved as <c>0</c>. To keep existing values, include every updatable property in the request with
+    ///         the values you intend to store.
+    ///     </para>
     ///     <b>Database update (EF Core)</b>
     ///     <para>
     ///         <c>FirstOrDefaultAsync(v =&gt; v.Id == id)</c> — Loads the row to update or returns <c>null</c>
@@ -450,7 +461,10 @@ public class VillaController : ControllerBase
     ///     </para>
     /// </remarks>
     /// <param name="id">Primary key of the villa to update; must be greater than zero.</param>
-    /// <param name="villaUpdateDTO">JSON body with fields to update; must not be null.</param>
+    /// <param name="villaUpdateDTO">
+    ///     JSON body with all updatable villa fields; must not be null. Omitted properties are treated as defaults and
+    ///     can overwrite stored values—send the complete shape on every PUT.
+    /// </param>
     /// <returns>
     ///     200 OK with <see cref="ApiResponse{VillaDTO}"/>; 400/404/409/500 with the same envelope shape on failure.
     /// </returns>
