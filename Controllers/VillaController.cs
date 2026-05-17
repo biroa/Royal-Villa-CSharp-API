@@ -150,13 +150,19 @@ public class VillaController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<VillaDTO>> GetVillaById(int id)
+    public async Task<ActionResult<ApiResponse<VillaDTO>>> GetVillaById(int id)
     {
         try
         {
             if (id <= 0)
             {
-                return BadRequest("Id is required");
+                return new ApiResponse<VillaDTO> {
+                    
+                    StatusCode = StatusCodes.Status400BadRequest,
+                    Errors = new List<string> { "Villa id must be greater than 0" },
+                    Success = false,
+                    Message = "Id is required",            
+                };                
             }
             
             var villa = await _dbContext.Villas.FirstOrDefaultAsync(v => v.Id == id);           
@@ -164,7 +170,13 @@ public class VillaController : ControllerBase
             {
                 return NotFound($"Villa with id {id} not found");
             }
-            return Ok(_mapper.Map<VillaDTO>(villa));
+            
+            return new ApiResponse<VillaDTO> {
+                Data = _mapper.Map<VillaDTO>(villa),
+                StatusCode = StatusCodes.Status200OK,
+                Success = true,
+                Message = "Villa fetched successfully"
+            };
         }
         catch (Exception ex)
         {
