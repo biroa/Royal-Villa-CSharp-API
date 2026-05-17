@@ -592,7 +592,7 @@ public class VillaController : ControllerBase
     
             _dbContext.Villas.Remove(existingVilla);
             await _dbContext.SaveChangesAsync();
-            return StatusCode(StatusCodes.Status204NoContent, ApiResponse<object?>.NoContent());
+            return StatusCode(StatusCodes.Status204NoContent, ApiResponse<object?>.NoContent($"Villa with id {id} deleted successfully"));
         }
         catch (Exception ex)
         {

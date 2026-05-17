@@ -41,8 +41,8 @@ public class ApiResponse<TData>
     public static ApiResponse<TData> CreatedAtRoute(string routeName, object? routeValues = null, TData? data = default) => 
         Create(true, StatusCodes.Status201Created, "Created", data, new { routeName, routeValues });
 
-    public static ApiResponse<TData> NoContent() => 
-        Create(true, StatusCodes.Status204NoContent, "No content");
+    public static ApiResponse<TData> NoContent(string message = "No content") => 
+        Create(true, StatusCodes.Status204NoContent, message);
 
     public static ApiResponse<TData> Accepted() => 
         Create(true, StatusCodes.Status202Accepted, "Accepted");
