@@ -37,9 +37,19 @@ builder.Services.AddOpenApi(options =>
 });
 builder.Services.AddAutoMapper(cfg =>
 {
-    cfg.CreateMap<VillaCreateDTO, Villa>();
+    // Write path: request DTO → entity (one-way; never expose entity on input)
+    cfg.CreateMap<VillaCreateDTO, Villa>()
+        .ForMember(dest => dest.Id, opt => opt.Ignore())
+        .ForMember(dest => dest.CreatedDate, opt => opt.Ignore())
+        .ForMember(dest => dest.UpdatedDate, opt => opt.Ignore());
+
     cfg.CreateMap<VillaUpdateDTO, Villa>()
-        .ForMember(dest => dest.Id, opt => opt.Ignore());
+        .ForMember(dest => dest.Id, opt => opt.Ignore())
+        .ForMember(dest => dest.CreatedDate, opt => opt.Ignore())
+        .ForMember(dest => dest.UpdatedDate, opt => opt.Ignore());
+
+    // Read path: entity → response DTO (one-way; hides audit columns from clients)
+    cfg.CreateMap<Villa, VillaDTO>();
 });
 var app = builder.Build();
 await SeedDataAsync(app);

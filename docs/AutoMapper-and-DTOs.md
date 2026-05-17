@@ -108,3 +108,7 @@ For simple create/update shapes with aligned names — as with `VillaCreateDTO` 
 | What stays manual? | Server defaults, timestamps, and any renamed or computed fields. |
 
 Together, DTOs define a safe API surface; AutoMapper keeps the translation from that surface to entities short and consistent.
+
+## See also
+
+- [AutoMapper: One-Way vs ReverseMap (PHP & JavaScript perspective)](AutoMapper-OneWay-vs-ReverseMap-PHP-JS.md) — full `Program.cs` mapping setup, write vs read paths, and PHP/JS analogies (Laravel Form Requests, API Resources, Prisma/response types).

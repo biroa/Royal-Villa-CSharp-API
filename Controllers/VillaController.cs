@@ -47,9 +47,10 @@ public class VillaController : ControllerBase
     /// </remarks>
     /// <returns>200 OK with all villas when the query succeeds.</returns>
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<Villa>>> GetVillas()
+    public async Task<ActionResult<IEnumerable<VillaDTO>>> GetVillas()
     {
-        return Ok(await _dbContext.Villas.ToListAsync());
+        var villas = await _dbContext.Villas.ToListAsync();
+        return Ok(_mapper.Map<IEnumerable<VillaDTO>>(villas));
     }
 
     /// <summary>
@@ -149,7 +150,7 @@ public class VillaController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<Villa>> GetVillaById(int id)
+    public async Task<ActionResult<VillaDTO>> GetVillaById(int id)
     {
         try
         {
@@ -163,7 +164,7 @@ public class VillaController : ControllerBase
             {
                 return NotFound($"Villa with id {id} not found");
             }
-            return Ok(await _dbContext.Villas.FindAsync(id));
+            return Ok(_mapper.Map<VillaDTO>(villa));
         }
         catch (Exception ex)
         {
@@ -260,7 +261,7 @@ public class VillaController : ControllerBase
     [ProducesResponseType(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<Villa>> CreateVilla(VillaCreateDTO villaCreateDTO)
+    public async Task<ActionResult<VillaDTO>> CreateVilla(VillaCreateDTO villaCreateDTO)
     {
         try
         {
@@ -277,10 +278,11 @@ public class VillaController : ControllerBase
             }
 
             var villa = _mapper.Map<Villa>(villaCreateDTO);
+            villa.CreatedDate = DateTime.UtcNow;
 
             await _dbContext.Villas.AddAsync(villa);
             await _dbContext.SaveChangesAsync();
-            return CreatedAtAction(nameof(GetVillaById), new { id = villa.Id }, villa);
+            return CreatedAtAction(nameof(GetVillaById), new { id = villa.Id }, _mapper.Map<VillaDTO>(villa));
         }
         catch (Exception ex)
         {
@@ -400,7 +402,7 @@ public class VillaController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<Villa>> UpdateVilla(int id, VillaUpdateDTO villaUpdateDTO)
+    public async Task<ActionResult<VillaDTO>> UpdateVilla(int id, VillaUpdateDTO villaUpdateDTO)
     {
         try
         {
@@ -425,9 +427,9 @@ public class VillaController : ControllerBase
             }
 
             _mapper.Map(villaUpdateDTO, existingVilla);
-            existingVilla.UpdatedDate = DateTime.Now.ToUniversalTime();
+            existingVilla.UpdatedDate = DateTime.UtcNow;
             await _dbContext.SaveChangesAsync();
-            return Ok(existingVilla);
+            return Ok(_mapper.Map<VillaDTO>(existingVilla));
         }
         catch (Exception ex)
         {
