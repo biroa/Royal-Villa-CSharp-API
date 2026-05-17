@@ -174,7 +174,8 @@ public class VillaController : ControllerBase
     }
 
     /// <summary>
-    ///     POST a new villa: accept input as JSON, persist it, and return 201 Created with a Location header.
+    ///     POST a new villa: accept input as JSON, reject duplicate names with 409 Conflict, persist it, and return
+    ///     201 Created with a Location header.
     /// </summary>
     /// <remarks>
     ///     <b>HTTP and routing</b>
@@ -186,7 +187,7 @@ public class VillaController : ControllerBase
     ///         <c>req.body</c> in Express when a JSON middleware is enabled.
     ///     </para>
     ///     <para>
-    ///         <c>[ProducesResponseType(...)]</c> — Documents 201, 400, and 500 for OpenAPI/Swagger; they
+    ///         <c>[ProducesResponseType(...)]</c> — Documents 201, 400, 409, and 500 for OpenAPI/Scalar; they
     ///         do not change runtime behavior.
     ///     </para>
     ///     <b>DTO vs entity</b>
@@ -202,6 +203,10 @@ public class VillaController : ControllerBase
     ///         in other stacks). Mapping is configured at startup in <c>Program.cs</c>.
     ///     </para>
     ///     <b>Database write (EF Core)</b>
+    ///     <para>
+    ///         <c>FirstOrDefaultAsync(... Name ...)</c> — Before insert, looks for an existing villa whose name
+    ///         matches the request (case-insensitive). If one exists, the action stops before mapping or saving.
+    ///     </para>
     ///     <para>
     ///         <c>AddAsync(villa)</c> — Stages the entity in the change tracker as <b>Added</b>; no SQL
     ///         INSERT runs yet. Think of it as “queue this row for insert.”
@@ -262,6 +267,13 @@ public class VillaController : ControllerBase
             if (villaCreateDTO == null)
             {
                 return BadRequest("Villa is required");
+            }
+
+            var duplicateVilla = await _dbContext.Villas.FirstOrDefaultAsync(v => v.Name.ToLower() == villaCreateDTO.Name.ToLower());
+            
+            if (duplicateVilla != null)
+            {
+                return Conflict($"Villa with name {villaCreateDTO.Name} already exists");
             }
 
             var villa = _mapper.Map<Villa>(villaCreateDTO);
