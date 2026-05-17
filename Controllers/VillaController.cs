@@ -277,7 +277,8 @@ public class VillaController : ControllerBase
     }
 
     /// <summary>
-    ///     PUT an existing villa by route id: accept JSON, update the row, and return 200 OK with the updated entity.
+    ///     PUT an existing villa by route id: accept JSON, reject duplicate names with 409 Conflict, update the row,
+    ///     and return 200 OK with the updated entity.
     /// </summary>
     /// <remarks>
     ///     <b>HTTP and routing</b>
@@ -289,7 +290,7 @@ public class VillaController : ControllerBase
     ///         <see cref="VillaUpdateDTO"/>.
     ///     </para>
     ///     <para>
-    ///         <c>[ProducesResponseType(...)]</c> — Documents 200, 400, 404, and 500 for OpenAPI/Scalar; they do
+    ///         <c>[ProducesResponseType(...)]</c> — Documents 200, 400, 404, 409, and 500 for OpenAPI/Scalar; they do
     ///         not change runtime behavior.
     ///     </para>
     ///     <b>DTO vs entity</b>
@@ -309,6 +310,11 @@ public class VillaController : ControllerBase
     ///     <para>
     ///         <c>FirstOrDefaultAsync(v =&gt; v.Id == id)</c> — Loads the row to update or returns <c>null</c>
     ///         if missing (→ 404). The entity is <b>tracked</b> by the change tracker after this query.
+    ///     </para>
+    ///     <para>
+    ///         <c>FirstOrDefaultAsync(... Name ... &amp;&amp; v.Id != id)</c> — Looks for another villa whose
+    ///         name matches the request (case-insensitive). If one exists, the update would violate a unique
+    ///         business rule, so the action stops before mapping or saving.
     ///     </para>
     ///     <para>
     ///         After mapping, <c>existingVilla.UpdatedDate = DateTime.Now.ToUniversalTime()</c> sets the audit
@@ -339,6 +345,16 @@ public class VillaController : ControllerBase
     ///         <c>if (existingVilla == null)</c> — Returns 404 when no villa exists for <paramref name="id"/>.
     ///     </para>
     ///     <para>
+    ///         <c>if (duplicateVilla != null)</c> — Returns <b>409 Conflict</b> via
+    ///         <c>Conflict(...)</c>. In ASP.NET Core, <c>Conflict</c> is a helper that sets the HTTP status to
+    ///         <b>409</b> and puts a short message in the body (e.g. “Villa with name … already exists”).
+    ///         <b>409 Conflict</b> means: the request was understood and the target villa exists, but the change
+    ///         cannot be applied because it clashes with another record (here, another villa already uses that
+    ///         name). This is not a syntax error (400) or “wrong id” (404); it is a <b>state conflict</b>, like
+    ///         trying to rename a user to an email that is already taken. Clients should show the message to the
+    ///         user and ask for a different name rather than retrying the same payload.
+    ///     </para>
+    ///     <para>
     ///         <c>try</c> / <c>catch</c> — Unexpected failures (database, mapping) become 500 with
     ///         <c>ex.Message</c> in the body.
     ///     </para>
@@ -355,14 +371,22 @@ public class VillaController : ControllerBase
     ///         <b>Why not return 204 No Content?</b> — Returning 200 with the updated body lets clients refresh
     ///         UI state without a follow-up GET.
     ///     </para>
+    ///     <para>
+    ///         <b>What is Conflict / 409?</b> — HTTP status <b>409</b> is named “Conflict”. Frameworks expose it
+    ///         as a named result (here <c>Conflict</c>) so you do not hard-code <c>409</c> everywhere. Use it when
+    ///         the client sent valid data but the server refuses because of a rule about existing data (duplicate
+    ///         name, version mismatch, etc.). Compare: <b>400</b> bad input, <b>404</b> resource missing,
+    ///         <b>409</b> valid request but incompatible with current data.
+    ///     </para>
     /// </remarks>
     /// <param name="id">Primary key of the villa to update; must be greater than zero.</param>
     /// <param name="villaUpdateDTO">JSON body with fields to update; must not be null.</param>
-    /// <returns>200 OK with the updated villa, 400 if id or body is invalid, 404 if not found, 500 on failure.</returns>
+    /// <returns>200 OK with the updated villa; 400 if id or body is invalid; 404 if not found; 409 if the name is already used by another villa; 500 on failure.</returns>
     [HttpPut("{id:int}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<Villa>> UpdateVilla(int id, VillaUpdateDTO villaUpdateDTO)
     {
@@ -380,6 +404,12 @@ public class VillaController : ControllerBase
             if (existingVilla == null)
             {
                 return NotFound($"Villa with id {id} not found");
+            }
+            var duplicateVilla = await _dbContext.Villas.FirstOrDefaultAsync(v => v.Name.ToLower() == villaUpdateDTO.Name.ToLower() && v.Id != id);
+            
+            if (duplicateVilla != null)
+            {
+                return Conflict($"Villa with name {villaUpdateDTO.Name} already exists");
             }
 
             _mapper.Map(villaUpdateDTO, existingVilla);
@@ -477,7 +507,7 @@ public class VillaController : ControllerBase
             {
                 return NotFound($"Villa with id {id} not found");
             }
-
+    
             _dbContext.Villas.Remove(existingVilla);
             await _dbContext.SaveChangesAsync();
             return NoContent();
